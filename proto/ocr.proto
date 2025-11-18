@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package ocrservice;
+
+message image{
+	string filename = 1;
+	string format = 2;
+	bytes imgData = 3;
+	int32 height = 4;
+	int32 width = 5;
+	int64 frame = 6;
+}
+
+message imageList{
+	int32 imgNum = 1;
+	repeated image images = 2;
+}
+
+message response{
+	repeated string inferences = 1;
+}
+
+service OCRService{
+	rpc OCRRequest(imageList) returns (response);
+}
