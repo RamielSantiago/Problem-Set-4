@@ -3,7 +3,7 @@
 To install vcpkg, open the command line and navigate to a directory of your choice. (Warning, the packages to install are large)
 - git clone vcpkg into the directory by typing "**git clone https://github.com/microsoft/vcpkg**"
 
-To build this CMake Project, you need to install vcpkg first and install the following packages using "vcpkg install \package-name\:x64-windows":
+To build this CMake Project, you need to install vcpkg first and install the following packages using "vcpkg install package-name:x64-windows":
 -  tesseract
 -  leptonica
 -  gRPC
