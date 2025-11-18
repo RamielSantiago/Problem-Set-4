@@ -8,6 +8,7 @@ To build this CMake Project, you need to install vcpkg first and install the fol
 -  leptonica
 -  gRPC
 -  protobuf
+
 Note: leptonica is usually installed along with tesseract. Also, protobuf is usually installed with gRPC,
 so you only need to run the install packages in the Command Line twice.
 
