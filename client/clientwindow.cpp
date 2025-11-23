@@ -19,62 +19,10 @@ using ocrservice::image;
 using ocrservice::imageList;
 using ocrservice::response;
 
-ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent){
-    QWidget* central = new QWidget(this);
-    setCentralWidget(central);
-
-    QVBoxLayout* layout = new QVBoxLayout(central);
-    layout->setContentsMargins(30, 30, 30, 30); 
-    layout->setSpacing(20);                     
-
-    button = new QPushButton("Select Directory", this);
-    button->setMinimumHeight(60);
-    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    layout->addWidget(button, 0, Qt::AlignTop);
-
-    QFrame* canvas = new QFrame(this);
-    canvas->setStyleSheet("background-color: #333333;");
-    canvas->setFrameShape(QFrame::Box);                  
-    canvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-
-    layout->addWidget(canvas); 
-
-    connect(button, &QPushButton::clicked, this, &ClientWindow::openDirectoryDialog);
-}
-
-void ClientWindow::openDirectoryDialog(){
-    QStringList filenames;
-    QStringList extensions;
-    QStringList toUpload = QFileDialog::getOpenFileNames(
-        this,
-        "Select Images to Process", //Dialog text
-        "", //Starting Directory
-        "Images (*.png *.jpg *.jpeg *.bmp)" //File type filter
-    );
-
-    images.clear();
-    filenames.clear();
-    extensions.clear();
-
-    for (const QString& path : toUpload) {
-        QImage img(path);
-        if (!img.isNull()) {
-            images.append(img);
-            filenames << QFileInfo(path).fileName(); // store just the filename
-            extensions << QFileInfo(path).suffix();
-        }
-        else {
-            qDebug() << "Failed to load image:" << path;
-        }
-    }
-
-    sendImages(images, filenames, extensions);
-}
-
 ocrservice::image qimageToProto(const QImage& img, const QString& filename, const QString& extension) {
     ocrservice::image protoImg;
     protoImg.set_filename(filename.toStdString());
-    protoImg.set_format(extension); 
+    protoImg.set_format(extension.toStdString()); 
 
     QByteArray bytes;
     QBuffer buffer(&bytes);
@@ -121,4 +69,56 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
     if (!status.ok()) {
         qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
     }
+}
+
+void ClientWindow::openDirectoryDialog() {
+    QStringList filenames;
+    QStringList extensions;
+    QStringList toUpload = QFileDialog::getOpenFileNames(
+        this,
+        "Select Images to Process", //Dialog text
+        "", //Starting Directory
+        "Images (*.png *.jpg *.jpeg *.bmp)" //File type filter
+    );
+
+    images.clear();
+    filenames.clear();
+    extensions.clear();
+
+    for (const QString& path : toUpload) {
+        QImage img(path);
+        if (!img.isNull()) {
+            images.append(img);
+            filenames << QFileInfo(path).fileName(); // store just the filename
+            extensions << QFileInfo(path).suffix();
+        }
+        else {
+            qDebug() << "Failed to load image:" << path;
+        }
+    }
+
+    sendImages(images, filenames, extensions);
+}
+
+ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
+    QWidget* central = new QWidget(this);
+    setCentralWidget(central);
+
+    QVBoxLayout* layout = new QVBoxLayout(central);
+    layout->setContentsMargins(30, 30, 30, 30);
+    layout->setSpacing(20);
+
+    button = new QPushButton("Select Directory", this);
+    button->setMinimumHeight(60);
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    layout->addWidget(button, 0, Qt::AlignTop);
+
+    QFrame* canvas = new QFrame(this);
+    canvas->setStyleSheet("background-color: #333333;");
+    canvas->setFrameShape(QFrame::Box);
+    canvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    layout->addWidget(canvas);
+
+    connect(button, &QPushButton::clicked, this, &ClientWindow::openDirectoryDialog);
 }
