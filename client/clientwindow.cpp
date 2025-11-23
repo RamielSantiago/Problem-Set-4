@@ -1,11 +1,23 @@
+#include <grpcpp/grpcpp.h>
+#include "ocr.pb.h"
+#include "ocr.grpc.pb.h"
 #include "clientwindow.h"
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QFileDialog>
+#include <QBuffer>
 #include <QDebug>
 #include <QFrame>
 #include <Qdir>
 #include <QFileInfoList>
+
+using grpc::Channel;
+using grpc::ClientContext;
+using grpc::ClientReaderWriter;
+using ocrservice::OCRService;
+using ocrservice::image;
+using ocrservice::imageList;
+using ocrservice::response;
 
 ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent){
     QWidget* central = new QWidget(this);
@@ -31,29 +43,82 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent){
 }
 
 void ClientWindow::openDirectoryDialog(){
-    QString dirPath = QFileDialog::getExistingDirectory(this, "Select Directory", "",
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-
-    if (!dirPath.isEmpty()) {
-        qDebug() << "Selected directory:" << dirPath;
-    }
-
-    QDir dir(dirPath);
-
+    QStringList filenames;
     QStringList extensions;
-    extensions << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp";
-    QFileInfoList fileList = dir.entryInfoList(extensions, QDir::Files);
+    QStringList toUpload = QFileDialog::getOpenFileNames(
+        this,
+        "Select Images to Process", //Dialog text
+        "", //Starting Directory
+        "Images (*.png *.jpg *.jpeg *.bmp)" //File type filter
+    );
 
     images.clear();
+    filenames.clear();
+    extensions.clear();
 
-    for (const QFileInfo& files : fileList) {
-        QImage img(files.absoluteFilePath());
+    for (const QString& path : toUpload) {
+        QImage img(path);
         if (!img.isNull()) {
             images.append(img);
+            filenames << QFileInfo(path).fileName(); // store just the filename
+            extensions << QFileInfo(path).suffix();
         }
         else {
-            qDebug() << "Failed to load image:" << files.absoluteFilePath();
+            qDebug() << "Failed to load image:" << path;
         }
     }
-    qDebug() << "Loaded" << images.size() << "images from" << dirPath;
+
+    sendImages(images, filenames, extensions);
+}
+
+ocrservice::image qimageToProto(const QImage& img, const QString& filename, const QString& extension) {
+    ocrservice::image protoImg;
+    protoImg.set_filename(filename.toStdString());
+    protoImg.set_format(extension); 
+
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    img.save(&buffer, extension.toUpper().toUtf8().constData());
+    protoImg.set_imgdata(bytes.constData(), bytes.size());
+
+    protoImg.set_height(img.height());
+    protoImg.set_width(img.width());
+    protoImg.set_frame(0); // optional frame number
+    return protoImg;
+}
+
+void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
+    auto stub = ocrservice::OCRService::NewStub(
+        grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials())
+    );
+
+    ClientContext context;
+    std::shared_ptr<ClientReaderWriter<imageList, response>> stream(
+        stub->OCRRequest(&context));
+
+    ocrservice::imageList batch;
+    for (int i = 0; i < images.size(); ++i) {
+        auto* imgProto = batch.add_images();
+        *imgProto = qimageToProto(images[i], filenames[i], extensions[i]);
+    }
+
+    if (!stream->Write(batch)) {
+        qDebug() << "Failed to send batch!";
+        return;
+    }
+
+    stream->WritesDone();
+
+    ocrservice::response res;
+    while (stream->Read(&res)) {
+        for (const auto& text : res.inferences()) {
+            qDebug() << "OCR result:" << QString::fromStdString(text);
+        }
+    }
+
+    grpc::Status status = stream->Finish();
+    if (!status.ok()) {
+        qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
+    }
 }

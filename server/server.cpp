@@ -1,5 +1,8 @@
 #include <tesseract/baseapi.h>
 #include <leptonica/allheaders.h>
+#include <grpcpp/grpcpp.h>
+#include "ocr.pb.h"
+#include "ocr.grpc.pb.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -11,8 +14,20 @@
 #include <iomanip>
 #include <semaphore>
 #include <filesystem>
+#include <memory>
 
 using namespace std;
+using grpc::Server;
+using grpc::ServerBuilder;
+using grpc::ServerContext;
+using grpc::Status;
+using grpc::ServerReader;
+
+using ocrservice::image;
+using ocrservice::imageList;
+using ocrservice::response;
+using ocrservice::OCRService;
+
 namespace fs = filesystem;
 
 struct result {
@@ -24,9 +39,31 @@ struct result {
 bool fin = false;
 mutex queueMutex;
 counting_semaphore<> sem(0);
-queue<string> imageQueue;
+queue<image> imageQueue;
 vector<vector<result>> perThreadResults;
 atomic<int> global_id{ 1 };
+
+class OCRChannel final : public OCRService::Service {
+    grpc::Status OCRRequest(grpc::ServerContext* context, grpc::ServerReaderWriter<response, imageList>* stream) override {
+        imageList imgBatch;
+        while (stream->Read(&imgBatch)) {
+            response res;
+            vector<image> images;
+
+            for (const auto& img : imgBatch.images()) {
+                images.push_back(img);
+            }
+
+            vector<string>texts = queueFeed(images);
+
+            for (const auto& txt : texts) {
+                res.add_inferences(txt); 
+            }
+            stream->Write(res);
+        }
+        return grpc::Status::OK;
+    }
+};
 
 void workerThread(int id) {
     tesseract::TessBaseAPI* ocr = new tesseract::TessBaseAPI();
@@ -100,7 +137,7 @@ void workerThread(int id) {
     ocr = nullptr;
 }
 
-int queueFeed() {
+vector<string> queueFeed(vector<image>& images) {
     string dir;
     cout << "Input the directory of images to process: ";
     cin >> dir;
@@ -114,15 +151,12 @@ int queueFeed() {
         threads.emplace_back(workerThread, i);
     }
 
-    for (const auto& entry : fs::directory_iterator(dir)) {
-        if (entry.is_regular_file()) {
-            string ext = entry.path().extension().string();
-            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tif" || ext == ".bmp") {
-                lock_guard<mutex> lock(queueMutex);
-                imageQueue.push(entry.path().string());
-                sem.release();
-            }
+    for (const auto& img : images) {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            imageQueue.push(img);
         }
+        sem.release();
     }
 
     {
@@ -149,9 +183,25 @@ int queueFeed() {
         [](const result& a, const result& b) {
             return a.id < b.id;
         });
-    return 0;
+
+    vector<string> texts;
+    for (int i = 0; i < Results.size(); ++i) {
+        texts.push_back(Results[i].extractedText);
+    }
+    return texts;
 }
 
 int main() {
-	return 0;
+    std::string server_address("0.0.0.0:50051");
+    OCRChannel service;
+
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&service);
+
+    std::unique_ptr<Server> server(builder.BuildAndStart());
+    std::cout << "Server listening on " << server_address << std::endl;
+
+    server->Wait();
+    return 0;
 }
