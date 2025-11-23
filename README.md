@@ -15,7 +15,9 @@ so you only need to run the install packages in the Command Line twice.
 After installing vcpkg and the packages, type "**vcpkg integrate install**" into the Command Line and copy the directory of your vcpkg.cmake
 
 Afterwards, if you have Qt installed, you need to add your Qt installation path (including the compiler type) to you device's Environmental Variables and name it QT6_PATH.
-Then, open the CMakePresets.json in the project files and replace the value of VCPKG_ROOT with the root path of your vcpkg installation.
+Then, open the CMakePresets.json in the project files and replace the value of VCPKG_ROOT with the root path of your vcpkg installation. Next, open the CMakeLists.txt in
+both client and server folders and replace the directory in "*--plugin=protoc-gen-grpc=*" under the "*add_custom_command*" call with the full directory of your 
+"*grpc_cpp_plugin.exe*" that was installed with grpc in vcpkg.
 
 Once you've done all that, Build the CMakeLists.txt in the root of the project folder. Then build the ones in the client and server folders if they did not build with the root.
 
