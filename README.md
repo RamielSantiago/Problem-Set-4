@@ -20,5 +20,6 @@ both client and server folders and replace the directory in "*--plugin=protoc-ge
 "*grpc_cpp_plugin.exe*" that was installed with grpc in vcpkg.
 
 Once you've done all that, Build the CMakeLists.txt in the root of the project folder. Then build the ones in the client and server folders if they did not build with the root.
+After building, paste the tessdata folder in the server folder in the build folder along with any missing dlls for tesseract an/or leptonica.
 
-Finally, test if the client is working.
+Finally, test if the client and server are working.
