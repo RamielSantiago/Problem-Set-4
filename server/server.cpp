@@ -54,13 +54,14 @@ class OCRChannel final : public OCRService::Service {
             for (const auto& img : imgBatch.images()) {
                 images.push_back(img);
             }
-
+            std::cout << "Images loaded and sent for processing..." << endl;
             vector<string>texts = queueFeed(images);
-
+            std::cout << "Processing finished. Returning Result..." << endl;
             for (const auto& txt : texts) {
                 res.add_inferences(txt); 
             }
             stream->Write(res);
+            std::cout << "Results Sent." << endl;
         }
         return grpc::Status::OK;
     }
@@ -102,38 +103,82 @@ void workerThread(int id) {
         }
 
         const std::string& imgData = img.imgdata();
+        if (imgData.size() < 10) {
+            std::cout << "WARN: image data too small (" << imgData.size()
+                << ") for " << img.filename() << "\n";
+            continue;
+        }
+
         const l_uint8* dataPtr = reinterpret_cast<const l_uint8*>(imgData.data());
         size_t dataSize = imgData.size();
 
-        Pix* image = pixReadMem(dataPtr, dataSize);
+        Pix* image = nullptr;
+        Pix* scaled = nullptr;
+        Pix* gray = nullptr;
+        Pix* gamma = nullptr;
+
+        image = pixReadMem(dataPtr, dataSize);
         if (!image) {
-            cout << "Image could not be processed...";
+            std::cout << "ERROR: pixReadMem failed for " << img.filename() << "\n";
             continue;
         }
 
         int width = pixGetWidth(image);
         int height = pixGetHeight(image);
-        Pix* scaled = (width < 1000 || height < 1000) ? pixScale(image, 1.5, 1.5) : pixClone(image);
-        Pix* gray = pixConvertRGBToGray(scaled, 0.0f, 0.0f, 0.0f);
-        Pix* gamma = pixGammaTRC(nullptr, gray, 1.2f, 0, 255);
+
+        if (width < 1000 || height < 1000) {
+            scaled = pixScale(image, 1.5, 1.5);
+        }
+        else {
+            scaled = pixClone(image);
+        }
+
+        if (!scaled) {
+            std::cout << "ERROR: Scaling/clone failed for " << img.filename() << "\n";
+            pixDestroy(&image);
+            continue;
+        }
+
+        gray = pixConvertRGBToGray(scaled, 0.0f, 0.0f, 0.0f);
+        if (!gray) {
+            std::cout << "ERROR: Grayscale conversion failed for " << img.filename() << "\n";
+            pixDestroy(&image);
+            pixDestroy(&scaled);
+            continue;
+        }
+
+        gamma = pixGammaTRC(nullptr, gray, 1.2f, 0, 255);
+        if (!gamma) {
+            std::cout << "ERROR: Gamma correction failed for " << img.filename() << "\n";
+            pixDestroy(&image);
+            pixDestroy(&scaled);
+            pixDestroy(&gray);
+            continue;
+        }
 
         ocr->SetImage(gamma);
         ocr->SetSourceResolution(300);
 
-        output = ocr->GetUTF8Text();
+        output = ocr->GetUTF8Text(); 
 
         result temp;
         temp.id = global_id++;
         temp.filename = img.filename();
-        temp.extractedText = (output ? string(output) : "OCR Failure");
-        delete[] output;
+        if (output) {
+            temp.extractedText = std::string(output);
+            delete[] output; // match Tesseract allocation
+            output = nullptr;
+        }
+        else {
+            temp.extractedText = "OCR Failure";
+        }
 
         thisThreadResults.push_back(move(temp));
 
-        pixDestroy(&image);
-        pixDestroy(&scaled);
-        pixDestroy(&gray);
-        pixDestroy(&gamma);
+        if (image) { pixDestroy(&image);  image = nullptr; }
+        if (scaled) { pixDestroy(&scaled); scaled = nullptr; }
+        if (gray) { pixDestroy(&gray);   gray = nullptr; }
+        if (gamma) { pixDestroy(&gamma);  gamma = nullptr; }
     }
     perThreadResults[id] = move(thisThreadResults);
 
@@ -189,6 +234,15 @@ vector<string> queueFeed(vector<image>& images) {
     for (int i = 0; i < Results.size(); ++i) {
         texts.push_back(Results[i].extractedText);
     }
+        
+    if (!imageQueue.empty()) {
+        while (!imageQueue.empty()) {
+            imageQueue.pop();
+        }
+    }
+    fin = false;
+    perThreadResults.clear();
+    global_id = 1;
     return texts;
 }
 
@@ -198,7 +252,7 @@ int main() {
 
     ServerBuilder builder;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
+	builder.RegisterService(&service);
 
     std::unique_ptr<Server> server(builder.BuildAndStart());
     std::cout << "Server listening on " << server_address << std::endl;
