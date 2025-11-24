@@ -37,8 +37,10 @@ ocrservice::image qimageToProto(const QImage& img, const QString& filename, cons
 }
 
 void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
+    std::string ip = "192.168.68.105:";
+    std::string address = ip + "50051";
     auto stub = ocrservice::OCRService::NewStub(
-        grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials())
+        grpc::CreateChannel(address, grpc::InsecureChannelCredentials())
     );
 
     ClientContext context;
