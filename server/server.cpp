@@ -42,6 +42,7 @@ counting_semaphore<> sem(0);
 queue<image> imageQueue;
 vector<vector<result>> perThreadResults;
 atomic<int> global_id{ 1 };
+vector<string> queueFeed(vector<image>& images);
 
 class OCRChannel final : public OCRService::Service {
     grpc::Status OCRRequest(grpc::ServerContext* context, grpc::ServerReaderWriter<response, imageList>* stream) override {
@@ -81,7 +82,7 @@ void workerThread(int id) {
 
     while (true) {
         sem.acquire();
-        string path;
+        ocrservice::image img;
         char* output = nullptr;
 
         {
@@ -96,11 +97,15 @@ void workerThread(int id) {
                 }
             }
 
-            path = imageQueue.front();
+            img = imageQueue.front();
             imageQueue.pop();
         }
 
-        Pix* image = pixRead(path.c_str());
+        const std::string& imgData = img.imgdata();
+        const l_uint8* dataPtr = reinterpret_cast<const l_uint8*>(imgData.data());
+        size_t dataSize = imgData.size();
+
+        Pix* image = pixReadMem(dataPtr, dataSize);
         if (!image) {
             cout << "Image could not be processed...";
             continue;
@@ -119,7 +124,7 @@ void workerThread(int id) {
 
         result temp;
         temp.id = global_id++;
-        temp.filename = fs::path(path).filename().string();
+        temp.filename = img.filename();
         temp.extractedText = (output ? string(output) : "OCR Failure");
         delete[] output;
 
@@ -138,10 +143,6 @@ void workerThread(int id) {
 }
 
 vector<string> queueFeed(vector<image>& images) {
-    string dir;
-    cout << "Input the directory of images to process: ";
-    cin >> dir;
-
     int num_threads = 2;
     perThreadResults.resize(num_threads);
 
