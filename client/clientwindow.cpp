@@ -55,16 +55,14 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
         qDebug() << "Failed to send batch!";
         return;
     }
-
+	std::cout << "Images sent for processing..." << std::endl;
     stream->WritesDone();
-
     ocrservice::response res;
     while (stream->Read(&res)) {
         for (const auto& text : res.inferences()) {
             qDebug() << "OCR result:" << QString::fromStdString(text);
         }
     }
-
     grpc::Status status = stream->Finish();
     if (!status.ok()) {
         qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
