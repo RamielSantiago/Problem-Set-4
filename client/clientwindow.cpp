@@ -44,6 +44,38 @@ ocrservice::image qimageToProto(const QImage& img, const QString& filename, cons
     return protoImg;
 }
 
+void ClientWindow::createImageCard(const QString& imageId, const QString& filename, const QImage& image) {
+    ImageCardWidgets w;
+    w.card = new QWidget();
+    QVBoxLayout* v = new QVBoxLayout(w.card);
+    v->setSpacing(4);
+    v->setContentsMargins(4, 4, 4, 4);
+
+    w.thumbnail = new QLabel();
+    w.thumbnail->setFixedSize(160, 120);
+    QPixmap pm = QPixmap::fromImage(image).scaled(w.thumbnail->size(),
+        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    w.thumbnail->setPixmap(pm);
+    v->addWidget(w.thumbnail);
+
+    w.filename = new QLabel(filename);
+    v->addWidget(w.filename);
+
+    w.status = new QLabel("Processing...");
+    v->addWidget(w.status);
+
+    w.result = new QLabel("");
+    w.result->setWordWrap(true);
+    v->addWidget(w.result);
+
+    int count = imageCards.size();
+    int row = count / 4;
+    int col = count % 4;
+
+    gridLayout->addWidget(w.card, row, col);
+    imageCards.insert(imageId, w);
+}
+
 void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
     std::string ip = "192.168.68.105:";
     std::string address = ip + "50051";
@@ -88,25 +120,33 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
     }
 }
 
+
 void ClientWindow::openDirectoryDialog() {
     QStringList extensions;
     QStringList toUpload = QFileDialog::getOpenFileNames(
         this,
-        "Select Images to Process", //Dialog text
-        "", //Starting Directory
-        "Images (*.png *.jpg *.jpeg *.bmp)" //File type filter
+        "Select Images to Process",
+        "",
+        "Images (*.png *.jpg *.jpeg *.bmp)"
     );
 
     images.clear();
     filenames.clear();
     extensions.clear();
 
+    int index = 0;
     for (const QString& path : toUpload) {
         QImage img(path);
+
         if (!img.isNull()) {
             images.append(img);
-            filenames << QFileInfo(path).fileName(); // store just the filename
+            filenames << QFileInfo(path).fileName();
             extensions << QFileInfo(path).suffix();
+
+            // image card creation
+            QString imageId = QString::number(index++);
+            createImageCard(imageId, QFileInfo(path).fileName(), img);
+
         }
         else {
             qDebug() << "Failed to load image:" << path;
@@ -152,4 +192,5 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     layout->addWidget(canvas);
 
     connect(button, &QPushButton::clicked, this, &ClientWindow::openDirectoryDialog);
+
 }
