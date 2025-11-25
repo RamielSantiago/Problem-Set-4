@@ -17,7 +17,8 @@ message imageList{
 }
 
 message response{
-	repeated string inferences = 1;
+	string filename = 1;
+	string extractedText = 2;
 }
 
 service OCRService{
