@@ -8,7 +8,7 @@
 #include <QBuffer>
 #include <QDebug>
 #include <QFrame>
-#include <Qdir>
+#include <QDir>
 #include <QScrollArea>
 #include <QLabel>
 #include <QFileInfoList>
@@ -21,13 +21,12 @@ using ocrservice::image;
 using ocrservice::imageList;
 using ocrservice::response;
 
-
 QFrame* canvas;
 
 ocrservice::image qimageToProto(const QImage& img, const QString& filename, const QString& extension) {
     ocrservice::image protoImg;
     protoImg.set_filename(filename.toStdString());
-    protoImg.set_format(extension.toStdString()); 
+    protoImg.set_format(extension.toStdString());
 
     QByteArray bytes;
     QBuffer buffer(&bytes);
@@ -37,9 +36,42 @@ ocrservice::image qimageToProto(const QImage& img, const QString& filename, cons
 
     protoImg.set_height(img.height());
     protoImg.set_width(img.width());
-    protoImg.set_frame(0); // optional frame number
+    protoImg.set_frame(0);
     return protoImg;
 }
+
+void ClientWindow::createImageCard(const QString& imageId, const QString& filename, const QImage& image) {
+    ImageCardWidgets w;
+    w.card = new QWidget();
+    QVBoxLayout* v = new QVBoxLayout(w.card);
+    v->setSpacing(4);
+    v->setContentsMargins(4, 4, 4, 4);
+
+    w.thumbnail = new QLabel();
+    w.thumbnail->setFixedSize(160, 120);
+    QPixmap pm = QPixmap::fromImage(image).scaled(w.thumbnail->size(),
+        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    w.thumbnail->setPixmap(pm);
+    v->addWidget(w.thumbnail);
+
+    w.filename = new QLabel(filename);
+    v->addWidget(w.filename);
+
+    w.status = new QLabel("Processing...");
+    v->addWidget(w.status);
+
+    w.result = new QLabel("");
+    w.result->setWordWrap(true);
+    v->addWidget(w.result);
+
+    int count = imageCards.size();
+    int row = count / 4;
+    int col = count % 4;
+
+    gridLayout->addWidget(w.card, row, col);
+    imageCards.insert(imageId, w);
+}
+
 
 void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
     std::string ip = "192.168.68.105:";
@@ -62,7 +94,8 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
         qDebug() << "Failed to send batch!";
         return;
     }
-	std::cout << "Images sent for processing..." << std::endl;
+    std::cout << "Images sent for processing..." << std::endl;
+
     stream->WritesDone();
     ocrservice::response res;
     while (stream->Read(&res)) {
@@ -70,6 +103,7 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
             qDebug() << "OCR result:" << QString::fromStdString(text);
         }
     }
+
     grpc::Status status = stream->Finish();
     if (!status.ok()) {
         qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
@@ -80,21 +114,28 @@ void ClientWindow::openDirectoryDialog() {
     QStringList extensions;
     QStringList toUpload = QFileDialog::getOpenFileNames(
         this,
-        "Select Images to Process", //Dialog text
-        "", //Starting Directory
-        "Images (*.png *.jpg *.jpeg *.bmp)" //File type filter
+        "Select Images to Process",
+        "",
+        "Images (*.png *.jpg *.jpeg *.bmp)"
     );
 
     images.clear();
     filenames.clear();
     extensions.clear();
 
+    int index = 0;
     for (const QString& path : toUpload) {
         QImage img(path);
+
         if (!img.isNull()) {
             images.append(img);
-            filenames << QFileInfo(path).fileName(); // store just the filename
+            filenames << QFileInfo(path).fileName();
             extensions << QFileInfo(path).suffix();
+
+            // image card creation
+            QString imageId = QString::number(index++);
+            createImageCard(imageId, QFileInfo(path).fileName(), img);
+
         }
         else {
             qDebug() << "Failed to load image:" << path;
@@ -126,13 +167,14 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     scrollArea->setWidgetResizable(true);
 
     QWidget* canvasContainer = new QWidget();
-    QGridLayout* gridLayout = new QGridLayout(canvasContainer);
+
+    // Save this to a member variable so createImageCard() can use it
+    gridLayout = new QGridLayout(canvasContainer);
     gridLayout->setSpacing(10);
     gridLayout->setContentsMargins(10, 10, 10, 10);
 
     scrollArea->setWidget(canvasContainer);
 
-    // Add scroll area to your main canvas layout
     QVBoxLayout* canvasLayout = new QVBoxLayout(canvas);
     canvasLayout->addWidget(scrollArea);
     canvas->setLayout(canvasLayout);
