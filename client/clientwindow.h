@@ -1,4 +1,3 @@
-
 #include <QMainWindow>
 #include <QString>
 
@@ -9,13 +8,24 @@ class ClientWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    ClientWindow(QWidget* parent = nullptr);
-
+    explicit ClientWindow(QWidget* parent = nullptr);
+    void openDirectoryDialog();
+    void createImageCard(const QString& imageId, const QString& filename, const QImage& image);
 private slots:
     void openDirectoryDialog();
 
 private:
-    QPushButton* button;
-    QStringList filenames;
     QVector<QImage> images;
+    QStringList filenames;
+    QGridLayout* gridLayout;
+    QMap<QString, ImageCardWidgets> imageCards;
+    QPushButton* button;
+};
+
+struct ImageCardWidgets {
+    QWidget* card;
+    QLabel* thumbnail;
+    QLabel* filename;
+    QLabel* status;
+    QLabel* result;
 };
