@@ -16,5 +16,6 @@ private slots:
 
 private:
     QPushButton* button;
+    QStringList filenames;
     QVector<QImage> images;
 };

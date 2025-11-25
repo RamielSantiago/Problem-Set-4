@@ -37,16 +37,43 @@ struct result {
 };
 
 bool fin = false;
-mutex queueMutex;
-counting_semaphore<> sem(0);
-queue<image> imageQueue;
-vector<vector<result>> perThreadResults;
 atomic<int> global_id{ 1 };
-vector<string> queueFeed(vector<image>& images);
+mutex queueMutex;
+mutex resultMutex;
+counting_semaphore<> sem(0);
+counting_semaphore<> resSem(0);
+queue<image> imageQueue;
+queue<string> resultQueue;
+vector<result> ocrResult;
+void queueFeed(vector<image>& images);
+void workerThread(int id);
 
 class OCRChannel final : public OCRService::Service {
+
+private:
+    vector<thread> threads;
+    atomic<bool> stop;
+    condition_variable waitForJobs;
+
+public:
+	OCRChannel(int num_threads = 2) {
+        stop = false;
+        threads.reserve(num_threads);
+        for (int i = 0; i < num_threads; i++) {
+            threads.emplace_back(workerThread, i);
+        }
+    }
+
+    ~OCRChannel() {
+        // Signal threads to stop
+        stop = true;
+        waitForJobs.notify_all();
+        for (auto& t : threads)
+            if (t.joinable()) t.join();
+    }
     grpc::Status OCRRequest(grpc::ServerContext* context, grpc::ServerReaderWriter<response, imageList>* stream) override {
         imageList imgBatch;
+
         while (stream->Read(&imgBatch)) {
             response res;
             vector<image> images;
@@ -54,13 +81,28 @@ class OCRChannel final : public OCRService::Service {
             for (const auto& img : imgBatch.images()) {
                 images.push_back(img);
             }
+
             std::cout << "Images loaded and sent for processing..." << endl;
-            vector<string>texts = queueFeed(images);
-            std::cout << "Processing finished. Returning Result..." << endl;
-            for (const auto& txt : texts) {
-                res.add_inferences(txt); 
+            queueFeed(images);
+            
+			size_t jobSize = images.size();
+
+			while (jobSize > 0) {
+                resSem.acquire();
+
+                string temp;
+                {
+                    lock_guard<mutex> lock(resultMutex);
+					temp = resultQueue.front();
+                    resultQueue.pop();
+                }
+
+                response res;
+                res.add_inferences(temp);
+				stream->Write(res);
+                jobSize--;
             }
-            stream->Write(res);
+
             std::cout << "Results Sent." << endl;
         }
         return grpc::Status::OK;
@@ -78,8 +120,6 @@ void workerThread(int id) {
 
     ocr->SetPageSegMode(tesseract::PSM_AUTO);
     ocr->SetVariable("preserve_interword_spaces", "1");
-
-    vector<result> thisThreadResults;
 
     while (true) {
         sem.acquire();
@@ -166,36 +206,32 @@ void workerThread(int id) {
         temp.filename = img.filename();
         if (output) {
             temp.extractedText = std::string(output);
-            delete[] output; // match Tesseract allocation
+            delete[] output;
             output = nullptr;
         }
         else {
             temp.extractedText = "OCR Failure";
         }
 
-        thisThreadResults.push_back(move(temp));
+        {
+			lock_guard<mutex> lock(resultMutex);
+			resultQueue.push(temp.extractedText);
+        }
+
+		resSem.release();
 
         if (image) { pixDestroy(&image);  image = nullptr; }
         if (scaled) { pixDestroy(&scaled); scaled = nullptr; }
         if (gray) { pixDestroy(&gray);   gray = nullptr; }
         if (gamma) { pixDestroy(&gamma);  gamma = nullptr; }
     }
-    perThreadResults[id] = move(thisThreadResults);
 
     ocr->End();
     delete ocr;
     ocr = nullptr;
 }
 
-vector<string> queueFeed(vector<image>& images) {
-    int num_threads = 2;
-    perThreadResults.resize(num_threads);
-
-    vector<thread> threads;
-    threads.reserve(num_threads);
-    for (int i = 0; i < num_threads; i++) {
-        threads.emplace_back(workerThread, i);
-    }
+void queueFeed(vector<image>& images) {
 
     for (const auto& img : images) {
         {
@@ -204,46 +240,6 @@ vector<string> queueFeed(vector<image>& images) {
         }
         sem.release();
     }
-
-    {
-        lock_guard<mutex> lock(queueMutex);
-        fin = true;
-    }
-
-    for (int i = 0; i < num_threads; ++i) {
-        sem.release();
-    }
-
-    for (auto& t : threads) {
-        t.join();
-    }
-
-    vector<result> Results;
-    for (auto& tv : perThreadResults) {
-        Results.insert(Results.end(),
-            std::make_move_iterator(tv.begin()),
-            std::make_move_iterator(tv.end()));
-    }
-
-    std::sort(Results.begin(), Results.end(),
-        [](const result& a, const result& b) {
-            return a.id < b.id;
-        });
-
-    vector<string> texts;
-    for (int i = 0; i < Results.size(); ++i) {
-        texts.push_back(Results[i].extractedText);
-    }
-        
-    if (!imageQueue.empty()) {
-        while (!imageQueue.empty()) {
-            imageQueue.pop();
-        }
-    }
-    fin = false;
-    perThreadResults.clear();
-    global_id = 1;
-    return texts;
 }
 
 int main() {

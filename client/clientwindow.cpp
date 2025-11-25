@@ -9,6 +9,8 @@
 #include <QDebug>
 #include <QFrame>
 #include <Qdir>
+#include <QScrollArea>
+#include <QLabel>
 #include <QFileInfoList>
 
 using grpc::Channel;
@@ -18,6 +20,9 @@ using ocrservice::OCRService;
 using ocrservice::image;
 using ocrservice::imageList;
 using ocrservice::response;
+
+
+QFrame* canvas;
 
 ocrservice::image qimageToProto(const QImage& img, const QString& filename, const QString& extension) {
     ocrservice::image protoImg;
@@ -72,7 +77,6 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
 }
 
 void ClientWindow::openDirectoryDialog() {
-    QStringList filenames;
     QStringList extensions;
     QStringList toUpload = QFileDialog::getOpenFileNames(
         this,
@@ -108,15 +112,30 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     layout->setContentsMargins(30, 30, 30, 30);
     layout->setSpacing(20);
 
-    button = new QPushButton("Select Directory", this);
+    button = new QPushButton("Upload Images", this);
     button->setMinimumHeight(60);
     button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     layout->addWidget(button, 0, Qt::AlignTop);
 
-    QFrame* canvas = new QFrame(this);
+    canvas = new QFrame(this);
     canvas->setStyleSheet("background-color: #333333;");
     canvas->setFrameShape(QFrame::Box);
     canvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    QScrollArea* scrollArea = new QScrollArea(canvas);
+    scrollArea->setWidgetResizable(true);
+
+    QWidget* canvasContainer = new QWidget();
+    QGridLayout* gridLayout = new QGridLayout(canvasContainer);
+    gridLayout->setSpacing(10);
+    gridLayout->setContentsMargins(10, 10, 10, 10);
+
+    scrollArea->setWidget(canvasContainer);
+
+    // Add scroll area to your main canvas layout
+    QVBoxLayout* canvasLayout = new QVBoxLayout(canvas);
+    canvasLayout->addWidget(scrollArea);
+    canvas->setLayout(canvasLayout);
 
     layout->addWidget(canvas);
 
