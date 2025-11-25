@@ -15,6 +15,7 @@
 #include <semaphore>
 #include <filesystem>
 #include <memory>
+#include <algorithm>
 
 using namespace std;
 using grpc::Server;
@@ -43,7 +44,7 @@ mutex resultMutex;
 counting_semaphore<> sem(0);
 counting_semaphore<> resSem(0);
 queue<image> imageQueue;
-queue<string> resultQueue;
+queue<result> resultQueue;
 vector<result> ocrResult;
 void queueFeed(vector<image>& images);
 void workerThread(int id);
@@ -90,7 +91,7 @@ public:
 			while (jobSize > 0) {
                 resSem.acquire();
 
-                string temp;
+                result temp;
                 {
                     lock_guard<mutex> lock(resultMutex);
 					temp = resultQueue.front();
@@ -98,8 +99,13 @@ public:
                 }
 
                 response res;
-                res.add_inferences(temp);
-				stream->Write(res);
+                res.set_filename(temp.filename);
+                //res.set_extractedtext(temp.extractedText);
+                std::string cleaned_text = temp.extractedText;
+                std::replace(cleaned_text.begin(), cleaned_text.end(), '\n', ' '); // replace \n with space
+                res.set_extractedtext(cleaned_text);
+
+                stream->Write(res);
                 jobSize--;
             }
 
@@ -215,7 +221,7 @@ void workerThread(int id) {
 
         {
 			lock_guard<mutex> lock(resultMutex);
-			resultQueue.push(temp.extractedText);
+			resultQueue.push(temp);
         }
 
 		resSem.release();
