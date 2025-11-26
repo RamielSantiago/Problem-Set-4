@@ -182,6 +182,10 @@ void ClientWindow::openDirectoryDialog() {
 }
 
 ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
+
+    // Register the instance
+    ClientWindow::instance = this;
+
     QWidget* central = new QWidget(this);
     setCentralWidget(central);
 
@@ -219,3 +223,6 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     connect(button, &QPushButton::clicked, this, &ClientWindow::openDirectoryDialog);
 
 }
+
+ClientWindow* ClientWindow::instance = nullptr;
+
