@@ -1,3 +1,4 @@
+
 #include <QMainWindow>
 #include <QString>
 
@@ -21,6 +22,7 @@ private:
     QGridLayout* gridLayout;
     QMap<QString, ImageCardWidgets> imageCards;
     QPushButton* button;
+    QWidget* canvasContainer;
 };
 
 
@@ -32,3 +34,4 @@ struct ImageCardWidgets {
     QLabel* result;
     QProgressBar* progress;
 };
+
