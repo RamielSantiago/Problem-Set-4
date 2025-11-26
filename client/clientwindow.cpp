@@ -51,23 +51,35 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     v->setSpacing(4);
     v->setContentsMargins(4, 4, 4, 4);
 
+    // Thumbnail
     w.thumbnail = new QLabel();
     w.thumbnail->setFixedSize(160, 120);
-    QPixmap pm = QPixmap::fromImage(image).scaled(w.thumbnail->size(),
-        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QPixmap pm = QPixmap::fromImage(image).scaled(
+        w.thumbnail->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation
+    );
     w.thumbnail->setPixmap(pm);
     v->addWidget(w.thumbnail);
 
+    // Filename
     w.filename = new QLabel(filename);
     v->addWidget(w.filename);
 
+    // Status
     w.status = new QLabel("Processing...");
     v->addWidget(w.status);
 
+    // Progress bar (0 → 100)
+    w.progress = new QProgressBar();
+    w.progress->setRange(0, 100);
+    w.progress->setValue(0);
+    v->addWidget(w.progress);
+
+    // OCR text
     w.result = new QLabel("");
     w.result->setWordWrap(true);
     v->addWidget(w.result);
 
+    // Add to grid
     int count = imageCards.size();
     int row = count / 4;
     int col = count % 4;
@@ -75,6 +87,7 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     gridLayout->addWidget(w.card, row, col);
     imageCards.insert(imageId, w);
 }
+
 
 void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
     std::string ip = "192.168.68.105:";
@@ -102,18 +115,30 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
     std::string last_filename;
     std::vector<results> OCRs;
     ocrservice::response res;
-    while (stream->Read(&res)) {
-        if (res.filename() != last_filename) {
-            last_filename = res.filename();
-            qDebug() << "File:" << QString::fromStdString(res.filename());
-            qDebug() << "OCR result:" << QString::fromStdString(res.extractedtext());
 
-            results temp;
-            temp.filename = last_filename;
-            temp.text = res.extractedtext();
-            OCRs.push_back(temp);
+    int currentIndex = 0;
+
+    while (stream->Read(&res)) {
+
+        // For each OCR result text returned
+        for (const auto& text : res.inferences()) {
+
+            QString out = QString::fromStdString(text);
+            qDebug() << "OCR result:" << out;
+
+            QString id = QString::number(currentIndex);
+
+            if (ClientWindow::instance->imageCards.contains(id)) {
+                auto& card = ClientWindow::instance->imageCards[id];
+                card.progress->setValue(100);
+                card.status->setText("Done");
+                card.result->setText(out);
+            }
+
+            currentIndex++;
         }
     }
+
     grpc::Status status = stream->Finish();
     if (!status.ok()) {
         qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
