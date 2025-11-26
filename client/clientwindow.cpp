@@ -12,6 +12,9 @@
 #include <QScrollArea>
 #include <QLabel>
 #include <QFileInfoList>
+#include <QProgressBar>
+#include <QMap>
+
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -45,6 +48,7 @@ ocrservice::image qimageToProto(const QImage& img, const QString& filename, cons
 }
 
 void ClientWindow::createImageCard(const QString& imageId, const QString& filename, const QImage& image) {
+
     ImageCardWidgets w;
     w.card = new QWidget();
     QVBoxLayout* v = new QVBoxLayout(w.card);
@@ -68,23 +72,25 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     w.status = new QLabel("Processing...");
     v->addWidget(w.status);
 
-    // Progress bar (0 → 100)
+    // Progress bar
     w.progress = new QProgressBar();
     w.progress->setRange(0, 100);
     w.progress->setValue(0);
     v->addWidget(w.progress);
 
-    // OCR text
+    // OCR output box
     w.result = new QLabel("");
     w.result->setWordWrap(true);
     v->addWidget(w.result);
 
-    // Add to grid
+    // Position in grid
     int count = imageCards.size();
     int row = count / 4;
     int col = count % 4;
 
     gridLayout->addWidget(w.card, row, col);
+
+    // Add to dictionary
     imageCards.insert(imageId, w);
 }
 
@@ -119,32 +125,29 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
     int currentIndex = 0;
 
     while (stream->Read(&res)) {
-
-        // For each OCR result text returned
         for (const auto& text : res.inferences()) {
 
-            QString out = QString::fromStdString(text);
-            qDebug() << "OCR result:" << out;
+            QString resultText = QString::fromStdString(text);
+            QString imageId = QString::number(currentIndex);
 
-            QString id = QString::number(currentIndex);
+            // Access the correct image card from UI
+            if (ClientWindow::instance->imageCards.contains(imageId)) {
 
-            if (ClientWindow::instance->imageCards.contains(id)) {
-                auto& card = ClientWindow::instance->imageCards[id];
-                card.progress->setValue(100);
+                auto& card = ClientWindow::instance->imageCards[imageId];
+
+                // Update status
                 card.status->setText("Done");
-                card.result->setText(out);
+
+                // Update progress bar
+                card.progress->setValue(100);
+
+                // Insert OCR output text
+                card.result->setText(resultText);
             }
 
             currentIndex++;
         }
     }
-
-    grpc::Status status = stream->Finish();
-    if (!status.ok()) {
-        qDebug() << "gRPC Error:" << QString::fromStdString(status.error_message());
-    }
-}
-
 
 void ClientWindow::openDirectoryDialog() {
     QStringList extensions;
@@ -158,28 +161,34 @@ void ClientWindow::openDirectoryDialog() {
     images.clear();
     filenames.clear();
     extensions.clear();
+    imageCards.clear();
+
+    // Clear grid layout visually
+    QLayoutItem* item;
+    while ((item = gridLayout->takeAt(0)) != nullptr) {
+        delete item->widget();
+        delete item;
+    }
 
     int index = 0;
     for (const QString& path : toUpload) {
         QImage img(path);
-
         if (!img.isNull()) {
             images.append(img);
-            filenames << QFileInfo(path).fileName();
-            extensions << QFileInfo(path).suffix();
+            QString fname = QFileInfo(path).fileName();
+            QString ext = QFileInfo(path).suffix();
+            filenames << fname;
+            extensions << ext;
 
-            // image card creation
-            QString imageId = QString::number(index++);
-            createImageCard(imageId, QFileInfo(path).fileName(), img);
-
-        }
-        else {
-            qDebug() << "Failed to load image:" << path;
+            // Create image card
+            createImageCard(QString::number(index), fname, img);
+            index++;
         }
     }
 
     sendImages(images, filenames, extensions);
 }
+
 
 ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
 
