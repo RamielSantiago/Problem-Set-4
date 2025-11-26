@@ -76,41 +76,46 @@ public:
         imageList imgBatch;
 
         while (stream->Read(&imgBatch)) {
-            response res;
-            vector<image> images;
+            try {
+                response res;
+                vector<image> images;
 
-            for (const auto& img : imgBatch.images()) {
-                images.push_back(img);
-            }
-
-            std::cout << "Images loaded and sent for processing..." << endl;
-            queueFeed(images);
-            
-			size_t jobSize = images.size();
-
-			while (jobSize > 0) {
-                resSem.acquire();
-
-                result temp;
-                {
-                    lock_guard<mutex> lock(resultMutex);
-					temp = resultQueue.front();
-                    resultQueue.pop();
+                for (const auto& img : imgBatch.images()) {
+                    images.push_back(img);
                 }
 
-                response res;
-                res.set_filename(temp.filename);
-                //res.set_extractedtext(temp.extractedText);
-                std::string cleaned_text = temp.extractedText;
-                std::replace(cleaned_text.begin(), cleaned_text.end(), '\n', ' '); // replace \n with space
-                res.set_extractedtext(cleaned_text);
+                std::cout << "Images loaded and sent for processing..." << endl;
+                queueFeed(images);
 
-                stream->Write(res);
-                jobSize--;
+                size_t jobSize = images.size();
+
+                while (jobSize > 0) {
+                    resSem.acquire();
+
+                    result temp;
+                    {
+                        lock_guard<mutex> lock(resultMutex);
+                        temp = resultQueue.front();
+                        resultQueue.pop();
+                    }
+
+                    response res;
+                    res.set_filename(temp.filename);
+                    //res.set_extractedtext(temp.extractedText);
+                    std::string cleaned_text = temp.extractedText;
+                    std::replace(cleaned_text.begin(), cleaned_text.end(), '\n', ' '); // replace \n with space
+                    res.set_extractedtext(cleaned_text);
+
+                    stream->Write(res);
+                    jobSize--;
+                }
+
+                std::cout << "Results Sent." << endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in Server: " << e.what() << std::endl;
+                return grpc::Status(grpc::StatusCode::INTERNAL, "Internal server error");
             }
-
-            std::cout << "Results Sent." << endl;
-        }
+		} 
         return grpc::Status::OK;
     }
 };
@@ -128,108 +133,112 @@ void workerThread(int id) {
     ocr->SetVariable("preserve_interword_spaces", "1");
 
     while (true) {
-        sem.acquire();
-        ocrservice::image img;
-        char* output = nullptr;
+        try {
+            sem.acquire();
+            ocrservice::image img;
+            char* output = nullptr;
 
-        {
-            lock_guard<mutex> lock(queueMutex);
-            if (imageQueue.empty()) {
-                if (fin) {
-                    cout << "Image Queue empty. Exiting Thread " << id << "..." << endl;
-                    break;
+            {
+                lock_guard<mutex> lock(queueMutex);
+                if (imageQueue.empty()) {
+                    if (fin) {
+                        cout << "Image Queue empty. Exiting Thread " << id << "..." << endl;
+                        break;
+                    }
+                    else {
+                        continue;
+                    }
                 }
-                else {
-                    continue;
-                }
+
+                img = imageQueue.front();
+                imageQueue.pop();
             }
 
-            img = imageQueue.front();
-            imageQueue.pop();
+            const std::string& imgData = img.imgdata();
+            if (imgData.size() < 10) {
+                std::cout << "WARN: image data too small (" << imgData.size()
+                    << ") for " << img.filename() << "\n";
+                continue;
+            }
+
+            const l_uint8* dataPtr = reinterpret_cast<const l_uint8*>(imgData.data());
+            size_t dataSize = imgData.size();
+
+            Pix* image = nullptr;
+            Pix* scaled = nullptr;
+            Pix* gray = nullptr;
+            Pix* gamma = nullptr;
+
+            image = pixReadMem(dataPtr, dataSize);
+            if (!image) {
+                std::cout << "ERROR: pixReadMem failed for " << img.filename() << "\n";
+                continue;
+            }
+
+            int width = pixGetWidth(image);
+            int height = pixGetHeight(image);
+
+            if (width < 1000 || height < 1000) {
+                scaled = pixScale(image, 1.5, 1.5);
+            }
+            else {
+                scaled = pixClone(image);
+            }
+
+            if (!scaled) {
+                std::cout << "ERROR: Scaling/clone failed for " << img.filename() << "\n";
+                pixDestroy(&image);
+                continue;
+            }
+
+            gray = pixConvertRGBToGray(scaled, 0.0f, 0.0f, 0.0f);
+            if (!gray) {
+                std::cout << "ERROR: Grayscale conversion failed for " << img.filename() << "\n";
+                pixDestroy(&image);
+                pixDestroy(&scaled);
+                continue;
+            }
+
+            gamma = pixGammaTRC(nullptr, gray, 1.2f, 0, 255);
+            if (!gamma) {
+                std::cout << "ERROR: Gamma correction failed for " << img.filename() << "\n";
+                pixDestroy(&image);
+                pixDestroy(&scaled);
+                pixDestroy(&gray);
+                continue;
+            }
+
+            ocr->SetImage(gamma);
+            ocr->SetSourceResolution(300);
+
+            output = ocr->GetUTF8Text();
+
+            result temp;
+            temp.id = global_id++;
+            temp.filename = img.filename();
+            if (output) {
+                temp.extractedText = std::string(output);
+                delete[] output;
+                output = nullptr;
+            }
+            else {
+                temp.extractedText = "OCR Failure";
+            }
+
+            {
+                lock_guard<mutex> lock(resultMutex);
+                resultQueue.push(temp);
+            }
+
+            resSem.release();
+
+            if (image) { pixDestroy(&image);  image = nullptr; }
+            if (scaled) { pixDestroy(&scaled); scaled = nullptr; }
+            if (gray) { pixDestroy(&gray);   gray = nullptr; }
+            if (gamma) { pixDestroy(&gamma);  gamma = nullptr; }
+        } catch (const std::exception& e) {
+            std::cerr << "Exception in Worker Thread " << id << ": " << e.what() << std::endl;
         }
-
-        const std::string& imgData = img.imgdata();
-        if (imgData.size() < 10) {
-            std::cout << "WARN: image data too small (" << imgData.size()
-                << ") for " << img.filename() << "\n";
-            continue;
-        }
-
-        const l_uint8* dataPtr = reinterpret_cast<const l_uint8*>(imgData.data());
-        size_t dataSize = imgData.size();
-
-        Pix* image = nullptr;
-        Pix* scaled = nullptr;
-        Pix* gray = nullptr;
-        Pix* gamma = nullptr;
-
-        image = pixReadMem(dataPtr, dataSize);
-        if (!image) {
-            std::cout << "ERROR: pixReadMem failed for " << img.filename() << "\n";
-            continue;
-        }
-
-        int width = pixGetWidth(image);
-        int height = pixGetHeight(image);
-
-        if (width < 1000 || height < 1000) {
-            scaled = pixScale(image, 1.5, 1.5);
-        }
-        else {
-            scaled = pixClone(image);
-        }
-
-        if (!scaled) {
-            std::cout << "ERROR: Scaling/clone failed for " << img.filename() << "\n";
-            pixDestroy(&image);
-            continue;
-        }
-
-        gray = pixConvertRGBToGray(scaled, 0.0f, 0.0f, 0.0f);
-        if (!gray) {
-            std::cout << "ERROR: Grayscale conversion failed for " << img.filename() << "\n";
-            pixDestroy(&image);
-            pixDestroy(&scaled);
-            continue;
-        }
-
-        gamma = pixGammaTRC(nullptr, gray, 1.2f, 0, 255);
-        if (!gamma) {
-            std::cout << "ERROR: Gamma correction failed for " << img.filename() << "\n";
-            pixDestroy(&image);
-            pixDestroy(&scaled);
-            pixDestroy(&gray);
-            continue;
-        }
-
-        ocr->SetImage(gamma);
-        ocr->SetSourceResolution(300);
-
-        output = ocr->GetUTF8Text(); 
-
-        result temp;
-        temp.id = global_id++;
-        temp.filename = img.filename();
-        if (output) {
-            temp.extractedText = std::string(output);
-            delete[] output;
-            output = nullptr;
-        }
-        else {
-            temp.extractedText = "OCR Failure";
-        }
-
-        {
-			lock_guard<mutex> lock(resultMutex);
-			resultQueue.push(temp);
-        }
-
-		resSem.release();
-
-        if (image) { pixDestroy(&image);  image = nullptr; }
-        if (scaled) { pixDestroy(&scaled); scaled = nullptr; }
-        if (gray) { pixDestroy(&gray);   gray = nullptr; }
-        if (gamma) { pixDestroy(&gamma);  gamma = nullptr; }
     }
 
     ocr->End();
@@ -253,6 +262,8 @@ int main() {
     OCRChannel service;
 
     ServerBuilder builder;
+    builder.SetMaxReceiveMessageSize(32 * 1024 * 1024); // 32MB
+    builder.SetMaxSendMessageSize(32 * 1024 * 1024);
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
 	builder.RegisterService(&service);
 
