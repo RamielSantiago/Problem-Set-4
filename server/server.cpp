@@ -37,6 +37,7 @@ struct result {
     string extractedText;
 };
 
+int num_threads = 2;
 atomic <bool> fin = false;
 atomic<int> global_id{ 1 };
 mutex queueMutex;
@@ -56,7 +57,7 @@ private:
     condition_variable waitForJobs;
 
 public:
-    OCRChannel(int num_threads = 2) {
+    OCRChannel() {
         fin = false;
         threads.reserve(num_threads);
         for (int i = 0; i < num_threads; i++) {
@@ -68,15 +69,18 @@ public:
         // Signal threads to stop
         fin = true;
         waitForJobs.notify_all();
-        for (auto& t : threads)
+        for (int i = 0; i < num_threads; i++) {
+            sem.release();
+        }
+        for (auto& t : threads) {
             if (t.joinable()) t.join();
+        }
     }
     grpc::Status OCRRequest(grpc::ServerContext* context, grpc::ServerReaderWriter<response, imageList>* stream) override {
         imageList imgBatch;
 
         while (stream->Read(&imgBatch)) {
             try {
-                response res;
                 vector<image> images;
 
                 for (const auto& img : imgBatch.images()) {
