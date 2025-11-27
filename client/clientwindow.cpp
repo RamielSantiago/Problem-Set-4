@@ -65,7 +65,7 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     v->addWidget(w.thumbnail);
 
     // Filename
-    w.filename = new QLabel(filename);
+    w.filename = new QLabel(filename);  
     v->addWidget(w.filename);
 
     // Status
@@ -116,7 +116,7 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
         qDebug() << "Failed to send batch!";
         return;
     }
-	std::cout << "Images sent for processing..." << std::endl;
+    std::cout << "Images sent for processing..." << std::endl;
     stream->WritesDone();
     std::string last_filename;
     std::vector<results> OCRs;
@@ -125,9 +125,8 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
     int currentIndex = 0;
 
     while (stream->Read(&res)) {
-        for (const auto& text : res.inferences()) {
 
-            QString resultText = QString::fromStdString(text);
+            QString resultText = QString::fromStdString(res.extractedtext());
             QString imageId = QString::number(currentIndex);
 
             // Access the correct image card from UI
@@ -146,8 +145,8 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
             }
 
             currentIndex++;
-        }
     }
+}
 
 void ClientWindow::openDirectoryDialog() {
     QStringList extensions;
@@ -221,8 +220,8 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     QScrollArea* scrollArea = new QScrollArea(canvas);
     scrollArea->setWidgetResizable(true);
 
-    QWidget* canvasContainer = new QWidget();
-    QGridLayout* gridLayout = new QGridLayout(canvasContainer);
+    canvasContainer = new QWidget();
+    gridLayout = new QGridLayout(canvasContainer);
     gridLayout->setSpacing(10);
     gridLayout->setContentsMargins(10, 10, 10, 10);
 
