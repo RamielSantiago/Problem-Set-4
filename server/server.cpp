@@ -37,7 +37,7 @@ struct result {
     string extractedText;
 };
 
-bool fin = false;
+atomic <bool> fin = false;
 atomic<int> global_id{ 1 };
 mutex queueMutex;
 mutex resultMutex;
@@ -53,12 +53,11 @@ class OCRChannel final : public OCRService::Service {
 
 private:
     vector<thread> threads;
-    atomic<bool> stop;
     condition_variable waitForJobs;
 
 public:
-	OCRChannel(int num_threads = 2) {
-        stop = false;
+    OCRChannel(int num_threads = 2) {
+        fin = false;
         threads.reserve(num_threads);
         for (int i = 0; i < num_threads; i++) {
             threads.emplace_back(workerThread, i);
@@ -67,7 +66,7 @@ public:
 
     ~OCRChannel() {
         // Signal threads to stop
-        stop = true;
+        fin = true;
         waitForJobs.notify_all();
         for (auto& t : threads)
             if (t.joinable()) t.join();
@@ -82,6 +81,12 @@ public:
 
                 for (const auto& img : imgBatch.images()) {
                     images.push_back(img);
+                }
+
+                if (images.empty()) {
+                    std::cerr << "Request denied. No images were received." << std::endl;
+                    return grpc::Status(grpc::StatusCode::CANCELLED,
+                        "Request denied. No images were received.");
                 }
 
                 std::cout << "Images loaded and sent for processing..." << endl;
@@ -106,16 +111,21 @@ public:
                     std::replace(cleaned_text.begin(), cleaned_text.end(), '\n', ' '); // replace \n with space
                     res.set_extractedtext(cleaned_text);
 
-                    stream->Write(res);
+                    if (!stream->Write(res)) {
+                        std::cerr << "Client Disconnected. Request terminated." << std::endl;
+                        return grpc::Status(grpc::StatusCode::CANCELLED,
+                            "Client disconnected during stream");
+                    }
                     jobSize--;
                 }
 
                 std::cout << "Results Sent." << endl;
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception& e) {
                 std::cerr << "Exception in Server: " << e.what() << std::endl;
                 return grpc::Status(grpc::StatusCode::INTERNAL, "Internal server error");
             }
-		} 
+        }
         return grpc::Status::OK;
     }
 };
@@ -236,7 +246,8 @@ void workerThread(int id) {
             if (scaled) { pixDestroy(&scaled); scaled = nullptr; }
             if (gray) { pixDestroy(&gray);   gray = nullptr; }
             if (gamma) { pixDestroy(&gamma);  gamma = nullptr; }
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e) {
             std::cerr << "Exception in Worker Thread " << id << ": " << e.what() << std::endl;
         }
     }
@@ -265,7 +276,7 @@ int main() {
     builder.SetMaxReceiveMessageSize(32 * 1024 * 1024); // 32MB
     builder.SetMaxSendMessageSize(32 * 1024 * 1024);
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-	builder.RegisterService(&service);
+    builder.RegisterService(&service);
 
     std::unique_ptr<Server> server(builder.BuildAndStart());
     std::cout << "Server listening on " << server_address << std::endl;

@@ -186,7 +186,13 @@ void ClientWindow::openDirectoryDialog() {
         }
     }
 
-    sendImages(images, filenames, extensions);
+    if (images.isEmpty()) {
+        qDebug() << "No valid images selected.";
+        return;
+    }
+    else {
+        sendImages(images, filenames, extensions);
+    }
 }
 
 
