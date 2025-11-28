@@ -33,7 +33,7 @@ struct results {
 ocrservice::image qimageToProto(const QImage& img, const QString& filename, const QString& extension) {
     ocrservice::image protoImg;
     protoImg.set_filename(filename.toStdString());
-    protoImg.set_format(extension.toStdString()); 
+    protoImg.set_format(extension.toStdString());
 
     QByteArray bytes;
     QBuffer buffer(&bytes);
@@ -65,7 +65,7 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     v->addWidget(w.thumbnail);
 
     // Filename
-    w.filename = new QLabel(filename);  
+    w.filename = new QLabel(filename);
     v->addWidget(w.filename);
 
     // Status
@@ -126,25 +126,25 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
 
     while (stream->Read(&res)) {
 
-            QString resultText = QString::fromStdString(res.extractedtext());
-            QString imageId = QString::number(currentIndex);
+        QString resultText = QString::fromStdString(res.extractedtext());
+        QString imageId = QString::number(currentIndex);
 
-            // Access the correct image card from UI
-            if (ClientWindow::instance->imageCards.contains(imageId)) {
+        // Access the correct image card from UI
+        if (ClientWindow::instance->imageCards.contains(imageId)) {
 
-                auto& card = ClientWindow::instance->imageCards[imageId];
+            auto& card = ClientWindow::instance->imageCards[imageId];
 
-                // Update status
-                card.status->setText("Done");
+            // Update status
+            card.status->setText("Done");
 
-                // Update progress bar
-                card.progress->setValue(100);
+            // Update progress bar
+            card.progress->setValue(100);
 
-                // Insert OCR output text
-                card.result->setText(resultText);
-            }
+            // Insert OCR output text
+            card.result->setText(resultText);
+        }
 
-            currentIndex++;
+        currentIndex++;
     }
 }
 

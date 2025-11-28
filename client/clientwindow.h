@@ -29,7 +29,7 @@ class ClientWindow : public QMainWindow
 public:
     explicit ClientWindow(QWidget* parent = nullptr);
     void createImageCard(const QString& imageId, const QString& filename, const QImage& image);
-    static ClientWindow* instance;  
+    static ClientWindow* instance;
     QMap<QString, ImageCardWidgets> imageCards;
 
 private slots:
