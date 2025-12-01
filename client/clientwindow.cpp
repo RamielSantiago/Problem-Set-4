@@ -14,6 +14,7 @@
 #include <QFileInfoList>
 #include <QProgressBar>
 #include <QMap>
+#include <QPixmap>
 
 
 using grpc::Channel;
@@ -72,12 +73,6 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     w.status = new QLabel("Processing...");
     v->addWidget(w.status);
 
-    // Progress bar
-    w.progress = new QProgressBar();
-    w.progress->setRange(0, 100);
-    w.progress->setValue(0);
-    v->addWidget(w.progress);
-
     // OCR output box
     w.result = new QLabel("");
     w.result->setWordWrap(true);
@@ -129,23 +124,26 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
         QString resultText = QString::fromStdString(res.extractedtext());
         QString imageId = QString::number(currentIndex);
 
-        // Access the correct image card from UI
         if (ClientWindow::instance->imageCards.contains(imageId)) {
 
             auto& card = ClientWindow::instance->imageCards[imageId];
 
-            // Update status
             card.status->setText("Done");
-
-            // Update progress bar
-            card.progress->setValue(100);
-
-            // Insert OCR output text
             card.result->setText(resultText);
         }
 
+        //progress bar update
+
+        ClientWindow::instance->processedImages++;
+
+        float p = (float)ClientWindow::instance->processedImages /
+            (float)ClientWindow::instance->totalImages;
+
+        ClientWindow::instance->globalProgress->setValue(p * 100);
+
         currentIndex++;
     }
+
 }
 
 void ClientWindow::openDirectoryDialog() {
@@ -169,6 +167,9 @@ void ClientWindow::openDirectoryDialog() {
         delete item;
     }
 
+    processedImages = 0;
+    globalProgress->setValue(0);
+
     int index = 0;
     for (const QString& path : toUpload) {
         QImage img(path);
@@ -184,6 +185,9 @@ void ClientWindow::openDirectoryDialog() {
             index++;
         }
     }
+
+    totalImages = images.size();
+
 
     if (images.isEmpty()) {
         qDebug() << "No valid images selected.";
@@ -211,6 +215,12 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
     button->setMinimumHeight(60);
     button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     layout->addWidget(button, 0, Qt::AlignTop);
+
+    globalProgress = new QProgressBar(this);
+    globalProgress->setRange(0, 100);
+    globalProgress->setValue(0);
+    globalProgress->setMinimumHeight(30);
+    layout->addWidget(globalProgress);
 
     canvas = new QFrame(this);
     canvas->setStyleSheet("background-color: #333333;");
