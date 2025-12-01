@@ -19,7 +19,6 @@ struct ImageCardWidgets {
     QLabel* filename;
     QLabel* status;
     QLabel* result;
-    QProgressBar* progress;
 };
 
 class ClientWindow : public QMainWindow
@@ -32,12 +31,17 @@ public:
     static ClientWindow* instance;
     QMap<QString, ImageCardWidgets> imageCards;
 
+    QProgressBar* globalProgress;
+    int totalImages = 0;
+    int processedImages = 0;
+
 private slots:
     void openDirectoryDialog();
 
 private:
     QVector<QImage> images;
     QStringList filenames;
+    QStringList extensions;
     QGridLayout* gridLayout;
     QPushButton* button;
     QWidget* canvasContainer;
