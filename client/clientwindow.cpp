@@ -130,6 +130,10 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
 
             card.status->setText("Done");
             card.result->setText(resultText);
+
+            ClientWindow::instance->ocrResults.append(
+                filenames[currentIndex] + ": " + resultText
+            );
         }
 
         //progress bar update
@@ -142,6 +146,26 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
         ClientWindow::instance->globalProgress->setValue(p * 100);
 
         currentIndex++;
+    }
+
+    if (ClientWindow::instance->processedImages == ClientWindow::instance->totalImages)
+    {
+        QString savePath = QCoreApplication::applicationDirPath() + "/output.txt";
+
+        QFile file(savePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+
+            for (const QString& line : ClientWindow::instance->ocrResults) {
+                out << line << "\n";
+            }
+
+            file.close();
+            qDebug() << "OCR results saved to" << savePath;
+        }
+        else {
+            qDebug() << "Failed to write output.txt";
+        }
     }
 
 }
@@ -159,6 +183,8 @@ void ClientWindow::openDirectoryDialog() {
     filenames.clear();
     extensions.clear();
     imageCards.clear();
+    ocrResults.clear();
+
 
     // Clear grid layout visually
     QLayoutItem* item;
