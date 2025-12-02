@@ -34,6 +34,8 @@ public:
     QProgressBar* globalProgress;
     int totalImages = 0;
     int processedImages = 0;
+    QStringList ocrResults;
+
 
 private slots:
     void openDirectoryDialog();
