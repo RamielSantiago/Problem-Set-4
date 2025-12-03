@@ -15,6 +15,7 @@
 #include <QProgressBar>
 #include <QMap>
 #include <QPixmap>
+#include <QCoreApplication>
 
 
 using grpc::Channel;
@@ -44,7 +45,7 @@ ocrservice::image qimageToProto(const QImage& img, const QString& filename, cons
 
     protoImg.set_height(img.height());
     protoImg.set_width(img.width());
-    protoImg.set_frame(0); // optional frame number
+    protoImg.set_frame(0);
     return protoImg;
 }
 
@@ -56,7 +57,6 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     v->setSpacing(4);
     v->setContentsMargins(4, 4, 4, 4);
 
-    // Thumbnail
     w.thumbnail = new QLabel();
     w.thumbnail->setFixedSize(160, 120);
     QPixmap pm = QPixmap::fromImage(image).scaled(
@@ -65,27 +65,22 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
     w.thumbnail->setPixmap(pm);
     v->addWidget(w.thumbnail);
 
-    // Filename
     w.filename = new QLabel(filename);
     v->addWidget(w.filename);
 
-    // Status
     w.status = new QLabel("Processing...");
     v->addWidget(w.status);
 
-    // OCR output box
     w.result = new QLabel("");
     w.result->setWordWrap(true);
     v->addWidget(w.result);
 
-    // Position in grid
     int count = imageCards.size();
     int row = count / 4;
     int col = count % 4;
 
     gridLayout->addWidget(w.card, row, col);
 
-    // Add to dictionary
     imageCards.insert(imageId, w);
 }
 
@@ -136,8 +131,6 @@ void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& ex
             );
         }
 
-        //progress bar update
-
         ClientWindow::instance->processedImages++;
 
         float p = (float)ClientWindow::instance->processedImages /
@@ -185,8 +178,6 @@ void ClientWindow::openDirectoryDialog() {
     imageCards.clear();
     ocrResults.clear();
 
-
-    // Clear grid layout visually
     QLayoutItem* item;
     while ((item = gridLayout->takeAt(0)) != nullptr) {
         delete item->widget();
@@ -206,7 +197,6 @@ void ClientWindow::openDirectoryDialog() {
             filenames << fname;
             extensions << ext;
 
-            // Create image card
             createImageCard(QString::number(index), fname, img);
             index++;
         }
@@ -227,7 +217,6 @@ void ClientWindow::openDirectoryDialog() {
 
 ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
 
-    // Register the instance
     ClientWindow::instance = this;
 
     QWidget* central = new QWidget(this);
@@ -263,7 +252,6 @@ ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
 
     scrollArea->setWidget(canvasContainer);
 
-    // Add scroll area to your main canvas layout
     QVBoxLayout* canvasLayout = new QVBoxLayout(canvas);
     canvasLayout->addWidget(scrollArea);
     canvas->setLayout(canvasLayout);
