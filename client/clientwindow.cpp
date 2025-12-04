@@ -85,12 +85,12 @@ void ClientWindow::createImageCard(const QString& imageId, const QString& filena
 }
 
 
-void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
-    std::string ip = "192.168.68.105:";
+void ClientWindow::sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions) {
+    /*std::string ip = "192.168.68.105:";
     std::string address = ip + "50051";
     auto stub = ocrservice::OCRService::NewStub(
         grpc::CreateChannel(address, grpc::InsecureChannelCredentials())
-    );
+    );*/
 
     ClientContext context;
     std::shared_ptr<ClientReaderWriter<imageList, response>> stream(
@@ -218,6 +218,12 @@ void ClientWindow::openDirectoryDialog() {
 ClientWindow::ClientWindow(QWidget* parent) : QMainWindow(parent) {
 
     ClientWindow::instance = this;
+
+    std::string ip = "192.168.68.127:";
+    std::string address = ip + "50051";
+    stub = ocrservice::OCRService::NewStub(
+        grpc::CreateChannel(address, grpc::InsecureChannelCredentials())
+    );
 
     QWidget* central = new QWidget(this);
     setCentralWidget(central);

@@ -10,6 +10,12 @@
 #include <QPushButton>
 #include <QProgressBar>
 #include <QImage>
+#include <memory>
+#include <string>
+#include <grpcpp/grpcpp.h>
+#include "ocr.pb.h"
+#include "ocr.grpc.pb.h"
+
 
 class QPushButton;
 
@@ -28,6 +34,7 @@ class ClientWindow : public QMainWindow
 public:
     explicit ClientWindow(QWidget* parent = nullptr);
     void createImageCard(const QString& imageId, const QString& filename, const QImage& image);
+    void sendImages(QVector<QImage>& images, QStringList& filenames, QStringList& extensions);
     static ClientWindow* instance;
     QMap<QString, ImageCardWidgets> imageCards;
 
@@ -36,6 +43,10 @@ public:
     int processedImages = 0;
     QStringList ocrResults;
 
+
+    std::string ip = "192.168.68.107:";
+    std::string address = ip + "50051";
+    std::unique_ptr<ocrservice::OCRService::Stub> stub;
 
 private slots:
     void openDirectoryDialog();
@@ -48,4 +59,3 @@ private:
     QPushButton* button;
     QWidget* canvasContainer;
 };
-
